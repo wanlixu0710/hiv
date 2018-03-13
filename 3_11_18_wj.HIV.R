@@ -42,10 +42,11 @@ otu <- otu2[-(35:36),]
 otu[otu < 0] <- 0 
 
 # calculate simpson diversity
-otu$simpson <- diversity(otu,"simp")
-otu$shannon <- diversity(otu, index = "shannon")
+otu$simpson <- diversity(otu[,1:2413],"simp")
+otu$shannon <- diversity(otu[,1:2413], index = "shannon")
+otu$specnumb <- specnumber(otu[,1:2413], MARGIN = 1)
 otu$Sample_ID <- rownames(otu)
-a.div <- otu[,c("Sample_ID","simpson","shannon")]
+a.div <- otu[,c("Sample_ID","simpson","shannon","specnumb")]
 
 #test two clinical files.
 a <- read.csv(file="sample information-microbiome analysis.csv")
@@ -86,6 +87,7 @@ subjectmean <-  data.frame(subjectmean)
 subjectmean$OTU <- row.names(subjectmean)
 subject <- inner_join(subjectmean,taxa)%>% filter(subjectmean>0)
 
+#supplemental table
 b <- data.frame(table(subject$kingdom))
 # phyla level of water contamination.
 b <- table(subject$phyla) %>% data.frame() %>% filter(Freq>0) %>% mutate (percent= Freq/2408)
@@ -259,7 +261,9 @@ pt.a.div <- filter(a.div, group=="Patient")
 
 pt.a.div$cd4_igg.cut <- cut(pt.a.div$CD4.autoIgG..ng.ml., breaks=c(-Inf, 50, Inf), labels=c("low", "high"))
 
-
+# justification of 40% instead of median
+median(pt.a.div$CD4.autoIgG..ng.ml.)
+table(a.div$group,a.div$CD4.autoIgG..ng.ml.)
 
 
 #figure 2
@@ -354,6 +358,7 @@ L3.high[c("c__gammaproteobacteria"),2]+L3.high[c("c__betaproteobacteria"),2]+L3.
 # t test for simpson between groups
 leveneTest(pt.a.div$simpson, pt.a.div$cd4_igg.cut)
 t.test(pt.a.div$simpson~pt.a.div$cd4_igg.cut)
+summary(lm(pt.a.div$simpson~ pt.a.div$CD4.autoIgG..ng.ml.))
 a.div$cd4_igg.cut <- cut(a.div$CD4.autoIgG..ng.ml., breaks=c(-Inf, 50, Inf), labels=c("Anti-CD4 IgG baseline <= 50", "Anti-CD4 IgG baseline > 50"))
 t.test(a.div$simpson~a.div$cd4_igg.cut)
 a.div$groups <- a.div$cd4_igg.cut %>% as.character()
@@ -366,6 +371,16 @@ t.test(a$simpson~a$groups)
 a <- a.div%>%filter(!groups=="Anti-CD4 IgG baseline > 50")
 t.test(a$simpson~a$groups)
 write.csv(a.div, file="a.div.test.csv")
+
+
+# t test for species observed between groups
+leveneTest(pt.a.div$specnumb, pt.a.div$cd4_igg.cut)
+t.test(pt.a.div$specnumb~pt.a.div$cd4_igg.cut)
+
+# u test
+wilcox.test(pt.a.div$specnumb~pt.a.div$cd4_igg.cut)
+wilcox.test(pt.a.div$simpson~pt.a.div$cd4_igg.cut)
+wilcox.test(pt.a.div$shannon~pt.a.div$cd4_igg.cut)
 
 
 # 1.1.3 Simpson diversity figure
@@ -654,7 +669,13 @@ class.level$variable <- revalue(class.level$variable, c("c__acidobacteria"= "Aci
 
 class.level.2 <- aggregate(value~variable+group, data=class.level, FUN=mean) 
 
-figure3C <- ggplot(class.level.2, aes(x = factor(group), y = value)) +scale_fill_manual(values=class.color, name="Key")+geom_bar(aes(fill=variable), position="fill", stat="identity") +labs( x="", y="Relative abundance (%)")+theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+theme(legend.text=element_text(face="italic"));figure3C
+figure3A <- ggplot(class.level.2, aes(x = factor(group), y = value)) +scale_fill_manual(values=class.color, name="Key")+geom_bar(aes(fill=variable), position="fill", stat="identity") +labs( x="", y="Relative abundance (%)")+theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+theme(legend.text=element_text(face="italic"));figure3A
+
+# whether the taxa are significantly different?
+
+out <- do.call("rbind", lapply(split(class.level, class.level$variable), function(x) t.test(value~group, x)$p.value))%>%as.data.frame()
+out <- out%>% mutate (class=row.names(out),p.fdr = round(p.adjust(V1, "fdr"),3))
+t.test(L3$c__gammaproteobacteria~L3$group)
 
 
 ### only focus on pt group
@@ -667,7 +688,16 @@ str(class.level)
 class.level.2 <- aggregate(value~variable+cd4_igg.cut, data=class.level, FUN=mean) 
 
 
-figure3D <- ggplot(class.level.2, aes(x = factor(cd4_igg.cut), y = value)) +scale_fill_manual(values=class.color, name="Key")+geom_bar(aes(fill=variable), position="fill", stat="identity") +labs( x="", y="Relative abundance (%)")+theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+theme(legend.text=element_text(face="italic"));figure3D
+figure3B <- ggplot(class.level.2, aes(x = factor(cd4_igg.cut), y = value)) +scale_fill_manual(values=class.color, name="Key")+geom_bar(aes(fill=variable), position="fill", stat="identity") +labs( x="", y="Relative abundance (%)")+theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+theme(legend.text=element_text(face="italic"));figure3B
+
+# whether the taxa are significantly different?
+
+out <- do.call("rbind", lapply(split(class.level, class.level$variable), function(x) t.test(value~cd4_igg.cut, x)$p.value))%>%as.data.frame()
+out <- out%>% mutate (class=row.names(out),p.fdr = round(p.adjust(V1, "fdr"),3))
+
+t.test(pt.L3$c__alphaproteobacteria~pt.L3$cd4_igg.cut)
+
+
 
 
 
@@ -699,6 +729,28 @@ row.names(genus.heatmap2) <- rownames(genus.heatmap)
 str(genus.heatmap2)
 
 heatmap(as.matrix(genus.heatmap2), Rowv=NA, Colv=NA, col=scaleyellowred, margins = c(10,2))
+
+### test for the phyla level
+genus.heatmap2$Sample_ID <- row.names(genus.heatmap2)
+genus.heatmap2 <- inner_join(genus.heatmap2,a.div[,c("Sample_ID","group","groups")])
+t.test(pt.L6$g__staphylococcus~ pt.L6$cd4_igg.cut)
+t.test(genus.heatmap2$Staphylococcus~ genus.heatmap2$group)
+t.test(pt.L6$g__pseudomonas~ pt.L6$cd4_igg.cut)
+t.test(genus.heatmap2$Pseudomonas~ genus.heatmap2$group)
+
+
+figure3D <- ggplot(genus.heatmap2, aes(x = factor(groups), y=Pseudomonas,fill = as.factor(groups)))+geom_bar(stat = "summary", fun.y = "mean")+labs(fill = "Key",x="", y="Pseudomonas (%)")+ theme(panel.background = element_rect(fill = "white", colour = "grey50"));figure3D
+figure3D <- ggplot(genus.heatmap2, aes(x = factor(groups), y=Staphylococcus,fill = as.factor(groups)))+geom_bar(stat = "summary", fun.y = "mean")+labs(fill = "Key",x="", y="Staphylococcus (%)") +theme(panel.background = element_rect(fill = "white", colour = "grey50"));figure3D
+
+a <- melt(genus.heatmap2[,c("groups","Staphylococcus","Pseudomonas")], id.vars = "groups")
+
+library("car")
+library("Rmisc")
+combined.c <- summarySE(a[,c( "groups","variable", "value")], measurevar="value", groupvars=c("groups","variable"))
+
+ggplot(combined.c, aes(x = factor(groups), y=value,fill = as.factor(groups)))+geom_bar(stat = "summary", fun.y = "mean")+labs(fill = "Key",x="", y="Relative abundance (%)")+ theme(panel.background = element_rect(fill = "white", colour = "grey50"))+ facet_wrap(~variable,scales="free")+ geom_errorbar(aes(ymin=value-se, ymax=value+se), width=.3, size=1, color="black")    
+
+
 
 # calculate the bray-curtis dissimilarity matrix on the full dataset
 data.dist <- vegdist(genus.heatmap2, method="bray")
